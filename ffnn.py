@@ -190,3 +190,26 @@ if __name__ == "__main__":
         print("Validation completed for epoch {}".format(epoch + 1))
         print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
         print("Validation time for this epoch: {}".format(time.time() - start_time))
+
+    print("========== Running Final Test ==========")
+    model.eval()
+    correct = 0
+    total = 0
+    start_time = time.time()
+    minibatch_size = 16
+    N = len(valid_data)
+    with torch.no_grad():
+        for minibatch_index in tqdm(range(0, N, minibatch_size)):
+
+            actual_batch = valid_data[minibatch_index: minibatch_index + minibatch_size]
+            actual_batch_size = len(actual_batch)
+
+            for example_index in range(actual_batch_size):
+                input_vector, gold_label = actual_batch[example_index]
+                predicted_vector = model(input_vector)
+                predicted_label = torch.argmax(predicted_vector)
+                correct += int(predicted_label == gold_label)
+                total += 1
+
+    print("Final Test accuracy: {}".format(correct / total))
+    print("Test time: {}".format(time.time() - start_time))
