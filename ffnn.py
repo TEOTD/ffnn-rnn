@@ -32,22 +32,22 @@ class FFNN(nn.Module):
 
     def forward(self, input_vector):
         # [to fill] obtain first hidden layer representation
-
+        hidden_layer = self.activation(self.W1(input_vector))
         # [to fill] obtain output layer representation
-
+        output_layer = self.W2(hidden_layer)
         # [to fill] obtain probability dist.
-
+        predicted_vector = self.softmax(output_layer)
         return predicted_vector
 
 
-# Returns: 
+# Returns:
 # vocab = A set of strings corresponding to the vocabulary
 def make_vocab(data):
     vocab = set()
     for document, _ in data:
         for word in document:
             vocab.add(word)
-    return vocab 
+    return vocab
 
 
 # Returns:
@@ -60,10 +60,10 @@ def make_indices(vocab):
     word2index = {}
     index2word = {}
     for index, word in enumerate(vocab_list):
-        word2index[word] = index 
-        index2word[index] = word 
+        word2index[word] = index
+        index2word[index] = word
     vocab.add(unk)
-    return vocab, word2index, index2word 
+    return vocab, word2index, index2word
 
 
 # Returns:
@@ -71,7 +71,7 @@ def make_indices(vocab):
 def convert_to_vector_representation(data, word2index):
     vectorized_data = []
     for document, y in data:
-        vector = torch.zeros(len(word2index)) 
+        vector = torch.zeros(len(word2index))
         for word in document:
             index = word2index.get(word, word2index[unk])
             vector[index] += 1
@@ -80,20 +80,25 @@ def convert_to_vector_representation(data, word2index):
 
 
 
-def load_data(train_data, val_data):
+def load_data(train_data, val_data, test_data):
     with open(train_data) as training_f:
         training = json.load(training_f)
     with open(val_data) as valid_f:
         validation = json.load(valid_f)
+    with open(test_data) as test_data_f:
+        test = json.load(test_data_f)
 
     tra = []
     val = []
+    tes = []
     for elt in training:
         tra.append((elt["text"].split(),int(elt["stars"]-1)))
     for elt in validation:
         val.append((elt["text"].split(),int(elt["stars"]-1)))
+    for elt in test:
+        tes.append((elt["text"].split(),int(elt["stars"]-1)))
 
-    return tra, val
+    return tra, val, tes
 
 
 if __name__ == "__main__":
@@ -112,14 +117,14 @@ if __name__ == "__main__":
 
     # load data
     print("========== Loading data ==========")
-    train_data, valid_data = load_data(args.train_data, args.val_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
+    train_data, valid_data, test_data = load_data(args.train_data, args.val_data, args.test_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
     vocab = make_vocab(train_data)
     vocab, word2index, index2word = make_indices(vocab)
 
     print("========== Vectorizing data ==========")
     train_data = convert_to_vector_representation(train_data, word2index)
     valid_data = convert_to_vector_representation(valid_data, word2index)
-    
+    test_data = convert_to_vector_representation(test_data, word2index)
 
     model = FFNN(input_dim = len(vocab), h = args.hidden_dim)
     optimizer = optim.SGD(model.parameters(),lr=0.01, momentum=0.9)
@@ -133,8 +138,8 @@ if __name__ == "__main__":
         start_time = time.time()
         print("Training started for epoch {}".format(epoch + 1))
         random.shuffle(train_data) # Good practice to shuffle order of training data
-        minibatch_size = 16 
-        N = len(train_data) 
+        minibatch_size = 16
+        N = len(train_data)
         for minibatch_index in tqdm(range(N // minibatch_size)):
             optimizer.zero_grad()
             loss = None
@@ -156,32 +161,47 @@ if __name__ == "__main__":
         print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
         print("Training time for this epoch: {}".format(time.time() - start_time))
 
-
+        model.eval()
         loss = None
         correct = 0
         total = 0
         start_time = time.time()
         print("Validation started for epoch {}".format(epoch + 1))
-        minibatch_size = 16 
-        N = len(valid_data) 
-        for minibatch_index in tqdm(range(N // minibatch_size)):
-            optimizer.zero_grad()
-            loss = None
-            for example_index in range(minibatch_size):
-                input_vector, gold_label = valid_data[minibatch_index * minibatch_size + example_index]
-                predicted_vector = model(input_vector)
-                predicted_label = torch.argmax(predicted_vector)
-                correct += int(predicted_label == gold_label)
-                total += 1
-                example_loss = model.compute_Loss(predicted_vector.view(1,-1), torch.tensor([gold_label]))
-                if loss is None:
-                    loss = example_loss
-                else:
-                    loss += example_loss
-            loss = loss / minibatch_size
+        minibatch_size = 16
+        N = len(valid_data)
+        with torch.no_grad():
+            for minibatch_index in tqdm(range(N // minibatch_size)):
+                loss = None
+                for example_index in range(minibatch_size):
+                    input_vector, gold_label = valid_data[minibatch_index * minibatch_size + example_index]
+                    predicted_vector = model(input_vector)
+                    predicted_label = torch.argmax(predicted_vector)
+                    correct += int(predicted_label == gold_label)
+                    total += 1
+                    example_loss = model.compute_Loss(predicted_vector.view(1,-1), torch.tensor([gold_label]))
+                    if loss is None:
+                        loss = example_loss
+                    else:
+                        loss += example_loss
+                loss = loss / minibatch_size
         print("Validation completed for epoch {}".format(epoch + 1))
         print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
         print("Validation time for this epoch: {}".format(time.time() - start_time))
 
-    # write out to results/test.out
-    
+        model.eval()
+        correct = 0
+        total = 0
+        start_time = time.time()
+        minibatch_size = 16
+        N = len(test_data)
+        with torch.no_grad():
+            for minibatch_index in tqdm(range(N // minibatch_size)):
+                for example_index in range(minibatch_size):
+                    input_vector, gold_label = test_data[minibatch_index * minibatch_size + example_index]
+                    predicted_vector = model(input_vector)
+                    predicted_label = torch.argmax(predicted_vector)
+                    correct += int(predicted_label == gold_label)
+                    total += 1
+
+        print("Test accuracy: {}".format(correct / total))
+        print("Test time: {}".format(time.time() - start_time))
