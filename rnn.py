@@ -1,3 +1,5 @@
+import gensim.downloader
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,7 +21,7 @@ unk = '<UNK>'
 class RNN(nn.Module):
     def __init__(self, input_dim, h):  # Add relevant parameters
         super(RNN, self).__init__()
-        self.h = h
+        self.h = h # int, the size of the hidden dimension
         self.numOfLayer = 1
         self.rnn = nn.RNN(input_dim, h, self.numOfLayer, nonlinearity='tanh')
         self.W = nn.Linear(h, 5)
@@ -31,14 +33,15 @@ class RNN(nn.Module):
 
     def forward(self, inputs):
         # [to fill] obtain hidden layer representation (https://pytorch.org/docs/stable/generated/torch.nn.RNN.html)
-        _, hidden = 
-        # [to fill] obtain output layer representations
-
+        rnn_output, hidden = self.rnn(inputs)
         # [to fill] sum over output 
-
+        sum_output = torch.mean(rnn_output, dim=0)
+        # [to fill] obtain output layer representations
+        final_output = self.W(sum_output)
         # [to fill] obtain probability dist.
+        final_output = self.softmax(final_output)
 
-        return predicted_vector
+        return final_output
 
 
 def load_data(train_data, val_data):
@@ -77,11 +80,15 @@ if __name__ == "__main__":
     # Option 3 will be the most time consuming, so we do not recommend starting with this
 
     print("========== Vectorizing data ==========")
-    model = RNN(50, args.hidden_dim)  # Fill in parameters
-    # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-    word_embedding = pickle.load(open('./word_embedding.pkl', 'rb'))
+    # Use Word2Vec 
+    #word_embedding = pickle.load(open('./word_embedding.pkl', 'rb'))
+    glove_embeds = gensim.downloader.load('glove-twitter-200')
+    word_embedding = {}
+    for word in glove_embeds.key_to_index:
+        word_embedding[word] = glove_embeds[word]
 
+    model = RNN(glove_embeds[word].size, args.hidden_dim)  # Fill in parameters
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
     stopping_condition = False
     epoch = 0
 
