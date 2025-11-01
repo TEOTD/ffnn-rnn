@@ -21,21 +21,24 @@ class FFNN(nn.Module):
         self.h = h
         self.W1 = nn.Linear(input_dim, h)
         self.activation = nn.ReLU() # The rectified linear unit; one valid choice of activation function
+        self.dropout = nn.Dropout(0.5)  # Add dropout to prevent overfitting
         self.output_dim = 5
         self.W2 = nn.Linear(h, self.output_dim)
 
-        self.softmax = nn.LogSoftmax() # The softmax function that converts vectors into probability distributions; computes log probabilities for computational benefits
+        self.softmax = nn.LogSoftmax(dim=-1) # The softmax function that converts vectors into probability distributions; computes log probabilities for computational benefits
         self.loss = nn.NLLLoss() # The cross-entropy/negative log likelihood loss taught in class
 
     def compute_Loss(self, predicted_vector, gold_label):
         return self.loss(predicted_vector, gold_label)
 
     def forward(self, input_vector):
-        # [to fill] obtain first hidden layer representation
+        # Obtain first hidden layer representation
         hidden_layer = self.activation(self.W1(input_vector))
-        # [to fill] obtain output layer representation
+        # Apply dropout to hidden layer to prevent overfitting
+        hidden_layer = self.dropout(hidden_layer)
+        # Obtain output layer representation
         output_layer = self.W2(hidden_layer)
-        # [to fill] obtain probability dist.
+        # Obtain probability distribution
         predicted_vector = self.softmax(output_layer)
         return predicted_vector
 
@@ -46,7 +49,7 @@ def make_vocab(data):
     vocab = set()
     for document, _ in data:
         for word in document:
-            vocab.add(word)
+            vocab.add(word.lower())  # Lowercasing reduces vocab size and improves generalization
     return vocab
 
 
@@ -73,11 +76,49 @@ def convert_to_vector_representation(data, word2index):
     for document, y in data:
         vector = torch.zeros(len(word2index))
         for word in document:
-            index = word2index.get(word, word2index[unk])
+            index = word2index.get(word.lower(), word2index[unk])
             vector[index] += 1
         vectorized_data.append((vector, y))
     return vectorized_data
 
+
+# Computes the Inverse Document Frequency (IDF) for each word
+def compute_idf(training_data, word2index):
+    N = len(training_data)
+    idf = torch.zeros(len(word2index))
+    
+    for document, _ in training_data:
+        unique_words = set(word.lower() for word in document)
+        for word in unique_words:
+            if word in word2index:
+                idf[word2index[word]] += 1
+    
+    # IDF = log(N / (df + 1)) where df is document frequency
+    # Adding 1 to avoid division by zero
+    idf = torch.log(N / (idf + 1))
+    return idf
+
+
+# Converts data to TF-IDF representation
+def convert_to_tfidf_representation(data, word2index, idf):
+    tfidf_data = []
+    for document, y in data:
+        # Compute term frequency (TF)
+        tf = torch.zeros(len(word2index))
+        for word in document:
+            index = word2index.get(word.lower(), word2index[unk])
+            tf[index] += 1
+        
+        # Apply TF-IDF weighting
+        tfidf = tf * idf
+        
+        # L2 normalization for better performance
+        norm = torch.norm(tfidf)
+        if norm > 0:
+            tfidf = tfidf / norm
+        
+        tfidf_data.append((tfidf, y))
+    return tfidf_data
 
 
 def load_data(train_data, val_data):
@@ -118,11 +159,31 @@ if __name__ == "__main__":
     vocab, word2index, index2word = make_indices(vocab)
 
     print("========== Vectorizing data ==========")
-    train_data = convert_to_vector_representation(train_data, word2index)
-    valid_data = convert_to_vector_representation(valid_data, word2index)
+    # Compute IDF from training data
+    idf = compute_idf(train_data, word2index)
+    # Convert to TF-IDF representation
+    train_data = convert_to_tfidf_representation(train_data, word2index, idf)
+    valid_data = convert_to_tfidf_representation(valid_data, word2index, idf)
+
+    # train_data = convert_to_vector_representation(train_data, word2index)
+    # valid_data = convert_to_vector_representation(valid_data, word2index)
+    
 
     model = FFNN(input_dim = len(vocab), h = args.hidden_dim)
-    optimizer = optim.SGD(model.parameters(),lr=0.01, momentum=0.9)
+    # Use Adam with weight decay for better regularization
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3)
+    # optimizer = optim.SGD(model.parameters(),lr=0.01, momentum=0.9)
+    
+    # Early stopping with stricter patience
+    best_val_acc = 0
+    patience = 1
+    patience_counter = 0
+    
+    # Track training history for learning curves
+    train_losses = []
+    train_accuracies = []
+    val_accuracies = []
+    
     print("========== Training for {} epochs ==========".format(args.epochs))
     for epoch in range(args.epochs):
         model.train()
@@ -130,6 +191,7 @@ if __name__ == "__main__":
         loss = None
         correct = 0
         total = 0
+        epoch_loss = 0
         start_time = time.time()
         print("Training started for epoch {}".format(epoch + 1))
         random.shuffle(train_data) # Good practice to shuffle order of training data
@@ -154,10 +216,18 @@ if __name__ == "__main__":
                 else:
                     loss += example_loss
             loss = loss / actual_batch_size
+            epoch_loss += loss.item()
             loss.backward()
             optimizer.step()
+        
+        avg_train_loss = epoch_loss / (N // minibatch_size)
+        train_acc = correct / total
+        train_losses.append(avg_train_loss)
+        train_accuracies.append(train_acc)
+        
         print("Training completed for epoch {}".format(epoch + 1))
-        print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
+        print("Training accuracy for epoch {}: {}".format(epoch + 1, train_acc))
+        print("Training loss for epoch {}: {:.4f}".format(epoch + 1, avg_train_loss))
         print("Training time for this epoch: {}".format(time.time() - start_time))
 
         model.eval()
@@ -188,28 +258,30 @@ if __name__ == "__main__":
                         loss += example_loss
                 loss = loss / actual_batch_size
         print("Validation completed for epoch {}".format(epoch + 1))
-        print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
+        val_acc = correct / total
+        val_accuracies.append(val_acc)
+        print("Validation accuracy for epoch {}: {}".format(epoch + 1, val_acc))
         print("Validation time for this epoch: {}".format(time.time() - start_time))
-
-    print("========== Running Final Test ==========")
-    model.eval()
-    correct = 0
-    total = 0
-    start_time = time.time()
-    minibatch_size = 16
-    N = len(valid_data)
-    with torch.no_grad():
-        for minibatch_index in tqdm(range(0, N, minibatch_size)):
-
-            actual_batch = valid_data[minibatch_index: minibatch_index + minibatch_size]
-            actual_batch_size = len(actual_batch)
-
-            for example_index in range(actual_batch_size):
-                input_vector, gold_label = actual_batch[example_index]
-                predicted_vector = model(input_vector)
-                predicted_label = torch.argmax(predicted_vector)
-                correct += int(predicted_label == gold_label)
-                total += 1
-
-    print("Final Test accuracy: {}".format(correct / total))
-    print("Test time: {}".format(time.time() - start_time))
+        
+        # Early stopping
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            print(f"Best validation accuracy: {best_val_acc:.4f}")
+        else:
+            patience_counter += 1
+            print(f"No improvement. Patience: {patience_counter}/{patience}")
+            if patience_counter >= patience:
+                print(f"Early stopping Best validation: {best_val_acc:.4f}")
+                break
+    
+    # Save learning curves to file for plotting
+    history = {
+        'train_loss': train_losses,
+        'train_accuracy': train_accuracies,
+        'val_accuracy': val_accuracies,
+        'best_val_accuracy': best_val_acc
+    }
+    with open(f'ffnn_history_h{args.hidden_dim}.json', 'w') as f:
+        json.dump(history, f, indent=2)
+    print(f"Learning curves saved to ffnn_history_h{args.hidden_dim}.json")
