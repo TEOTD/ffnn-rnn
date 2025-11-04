@@ -1,0 +1,43 @@
+FFNN Experiments:
+
+Compare TF-IDF vs BoW
+
+Using TF-IDF:-
+	Test Accuracy of hidden state 32: 0.5763
+	Test Accuracy of hidden state 64: 0.5813
+	Test Accuracy  of hidden state 128: 0.5463
+
+using BoW:-
+	Test Accuracy of hidden state 32: 0.4225
+	Test Accuracy of hidden state 64: 0.4512
+	Test Accuracy  of hidden state 128: 0.4313
+
+Optimizer Comparison
+
+| Experiment | Hidden Dim | Optimizer | Representation | Val Acc | Notes             |
+| ---------- | ---------- | --------- | -------------- | ------- | ----------------- |
+| 1          | 32         | Adam      | TF-IDF         | 0.592    | Quick convergence |
+| 2          | 64         | Adam      | TF-IDF         | 0.598    | Better fit        |
+| 3          | 128        | Adam      | TF-IDF         | 0.598    | Slight overfit    |
+| 4          | 64         | Adam      | BoW            | 0.566    | Slower learning   |
+| 5          | 64         | SGD       | BoW            | 0.4487   | underfitting observed   |
+
+
+
+RNN Experiments:
+
+Test data accuracy:-
+	Test Accuracy of hidden state 32: 0.4825
+	Test Accuracy of hidden state 64: 0.5250
+	Test Accuracy  of hidden state 128: 0.4888
+
+
+Optimizer Comparison
+
+| Experiment | Hidden Dim | Optimizer | Representation | Val Acc | Notes             |
+| ---------- | ---------- | --------- | -------------- | ------- | ----------------- |
+| 1          | 32         | AdamW     | RNN            | 0.6012  | Quick convergence; moderate performance |
+| 2          | 64         | AdamW     | RNN            | 0.6112  | Improved fit; good stability        |
+| 3          | 128        | AdamW     | RNN            | 0.6262  | Slight overfitting observed    |
+| 4          | 64         | AdamW     | LSTM           | 0.6210  | Slower learning but consistent accuracy   |
+| 5          | 64         | SGD       | LSTM           | 0.5863  | Underfitting; slower convergence   |
