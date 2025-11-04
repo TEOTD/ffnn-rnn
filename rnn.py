@@ -159,7 +159,7 @@ if __name__ == "__main__":
     model.embedding.weight.requires_grad = False
     
     # Use higher weight decay for stronger L2 regularization
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
     stopping_condition = False
     epoch = 0
 
@@ -175,7 +175,7 @@ if __name__ == "__main__":
             print("Unfreezing embeddings for fine-tuning...")
             model.embedding.weight.requires_grad = True
             # Recreate optimizer to include embedding parameters
-            optimizer = optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-4)  # Lower LR for fine-tuning
+            optimizer = optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-4)  # Lower LR for fine-tuning
         
         random.shuffle(train_data)
         model.train()
